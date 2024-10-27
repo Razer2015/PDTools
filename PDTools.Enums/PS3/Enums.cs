@@ -163,20 +163,35 @@ namespace PDTools.Enums.PS3
 
     public enum PARTS_TIRE
     {
+        [Description("Comfort: Hard")]
         COMFORT_HARD,
+        [Description("Comfort: Medium")]
         COMFORT_MEDIUM,
+        [Description("Comfort: Soft")]
         COMFORT_SOFT,
+        [Description("Sports: Hard")]
         SPORTS_HARD,
+        [Description("Sports: Medium")]
         SPORTS_MEDIUM,
+        [Description("Sports: Soft")]
         SPORTS_SOFT,
+        [Description("Sports: Super-Soft")]
         SPORTS_SUPER_SOFT,
+        [Description("Racing: Hard")]
         RACING_HARD,
+        [Description("Racing: Medium")]
         RACING_MEDIUM,
+        [Description("Racing: Soft")]
         RACING_SOFT,
+        [Description("Racing: Super-Soft")]
         RACING_SUPER_SOFT,
+        [Description("Racing: Intermediate")]
         RAIN_INTERMEDIATE,
+        [Description("Racing: Rain")]
         RAIN_HEAVY_WET,
+        [Description("Dirt Tyres")]
         DIRT,
+        [Description("Snow Tyres")]
         SNOW,
         TIRE_DRY_MIN = 0,
         TIRE_DRY_MAX = 11,
@@ -518,5 +533,84 @@ namespace PDTools.Enums.PS3
 
         [Description("Special Ticket (903)")]
         SPECIAL_TICKET = 903,
+    }
+    
+    public enum Drivetrain
+    {
+        [Description("FR")]
+        FR = 0,
+        
+        [Description("FF")]
+        FF = 1,
+        
+        [Description("4WD")]
+        AWD = 2,
+        
+        [Description("MR")]
+        MR = 3,
+        
+        [Description("RR")]
+        RR = 4,
+    }
+    
+    public enum Aspiration
+    {
+        [Description("Naturally Aspirated")]
+        NA = 0,
+
+        [Description("Turbocharged")]
+        TURBO = 1,
+
+        [Description("Supercharged")]
+        SUPERCHARGED = 2,
+        
+        [Description("Hybrid")]
+        EV = 4,
+    }
+
+    public enum GarageSortOrder
+    {
+        Normal = 0,
+        Reverse = 1,
+    }
+
+    public enum GarageSortType
+    {
+        Obtain = 0,
+        CarName = 1,
+        Tuner = 2,
+        Nationality = 3,
+        Power = 4,
+        Weight = 5,
+        Year = 6,
+        Distance = 7,
+        RideCount = 8,
+        Pp  = 9,
+        Ride = 10,
+    }
+
+    [Flags]
+    public enum GenericFlag
+    {
+        UsePresetEnemy = 0x1,
+        UseProBehavior = 0x2,
+        UsePremiumModel = 0x4,
+        DontSell = 0x8,
+        CanChangeDecken = 0x10,
+        CanAllPaint = 0x20,
+        IsF1Car = 0x40,
+        CanPresent = 0x80,
+        HaveDirtTire = 0x100,
+        CanChangeWing = 0x200,
+        HaveCarbonBonnet = 0x400,
+        HaveLightWeightWindot = 0x800,
+        IsVoucherCar = 0x1000,
+        IsRacingKart = 0x2000,
+        IsStrangeCar = 0x4000,
+        OneMakeOnly = 0x8000,
+        CanCarWash = 0x10000,
+        NoUse17 = 0x20000,
+        IsDlcCar = 0x40000,
+        IsDctrlImpreza = 0x80000,
     }
 }

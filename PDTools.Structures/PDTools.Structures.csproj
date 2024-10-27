@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net6.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+    <LangVersion>12</LangVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -19,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PDTools.Enums\PDTools.Enums.csproj" />
     <ProjectReference Include="..\PDTools.Utils\PDTools.Utils.csproj" />
+    <ProjectReference Include="..\STStruct\PDTools.STStruct.csproj" />
   </ItemGroup>
 
 </Project>

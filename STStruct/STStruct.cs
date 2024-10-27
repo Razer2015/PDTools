@@ -16,16 +16,23 @@ namespace PDTools.STStruct
 
         public NodeBase RootNode { get; set; }
 
-        public static STStruct Read(byte[] data)
+        public static STStruct Read(byte[] data, int basePosition = 0)
         {
             var sr = new SpanReader(data, Syroot.BinaryData.Core.Endian.Big);
-            int basePos = sr.Position;
+            sr.Position = basePosition;
 
+            return Deserialize(sr);
+        }
+        
+        public static STStruct Deserialize(SpanReader sr)
+        {
+            var basePosition = sr.Position;
+            
             byte version = sr.ReadByte(); // 0E
             int startPos = sr.ReadInt32();
 
             int baseTreeOffset = sr.Position;
-            sr.Position = basePos + startPos;
+            sr.Position = basePosition + startPos;
 
             var tree = new STStruct();
             tree.NodeNames = new string[sr.Read7BitUInt32()];
@@ -165,29 +172,47 @@ namespace PDTools.STStruct
 
         public void Save(string path)
         {
-            using (var bs = new BinaryStream(new FileStream(path, FileMode.Create)))
-            {
-                bs.ByteConverter = ByteConverter.Big;
-                bs.WriteInt32(0x18);
-                bs.WriteInt64(80009560400);
-                bs.Position += 4;
+            using var bs = new BinaryStream(new FileStream(path, FileMode.Create));
+            var binaryStream = bs;
+            binaryStream.ByteConverter = ByteConverter.Big;
+            Serialize(ref binaryStream);
+            
+            // bs.WriteInt32(0x18);
+            // bs.WriteInt64(80009560400);
+            // bs.Position += 4;
 
-                bs.WriteByte(0x0E);
-                bs.Position += 4; // Length
-                List<string> keys = new List<string>();
-                WriteNode(bs, RootNode, ref keys);
-                int keyTableOffset = (int)bs.Length;
-                bs.EncodeAndAdvance((uint)keys.Count);
-                foreach (var key in keys)
-                    bs.WriteString(key, StringCoding.ByteCharCount);
-                int totalLen = (int)bs.Position;
-
-                bs.Position = 0x10 + 1;
-                bs.WriteInt32(keyTableOffset - 0x10);
-
-                bs.Position = 0x0C;
-                bs.WriteInt32(totalLen - 0x10);
-            }
+            // bs.WriteByte(0x0E);
+            // bs.Position += 4; // Length
+            // List<string> keys = new List<string>();
+            // WriteNode(bs, RootNode, ref keys);
+            // int keyTableOffset = (int)bs.Length;
+            // bs.EncodeAndAdvance((uint)keys.Count);
+            // foreach (var key in keys)
+            //     bs.WriteString(key, StringCoding.ByteCharCount);
+            // int totalLen = (int)bs.Position;
+            //
+            // bs.Position = 0x10 + 1;
+            // bs.WriteInt32(keyTableOffset - 0x10);
+            //
+            // bs.Position = 0x0C;
+            // bs.WriteInt32(totalLen - 0x10);
+        }
+        
+        public void Serialize(ref BinaryStream bs)
+        {
+            var basePos = bs.Position;
+            bs.WriteByte(0x0E);
+            bs.Position += 4; // Length
+            var keys = new List<string>();
+            WriteNode(bs, RootNode, ref keys);
+            
+            var keyTableOffset = (int)bs.Length;
+            bs.EncodeAndAdvance((uint)keys.Count);
+            foreach (var key in keys)
+                bs.WriteString(key, StringCoding.ByteCharCount);
+            
+            bs.Position = basePos + 0x01;
+            bs.WriteInt32(keyTableOffset - (int)basePos);
         }
 
         private void WriteNode(BinaryStream bs, NodeBase node, ref List<string> keys)
