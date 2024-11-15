@@ -163,6 +163,16 @@ namespace PDTools.Structures.PS3
             return bs.GetBuffer();
         }
 
+        public int GetRidingCarId()
+        {
+            return CurrentGarageId;
+        }
+
+        public MCarParameter GetRidingCarParameter()
+        {
+            return MCarParameter.ImportFromBlob(RidingCarBlob);
+        }
+
         public void AddCar(MGarageCar car)
         {
             throw new NotImplementedException();
@@ -187,9 +197,14 @@ namespace PDTools.Structures.PS3
             // Cars.Clear();
         }
 
-        public MGarageCar GetCar(int index)
+        public MGarageCar GetCar(int garageId)
         {
-            return Cars[index];
+            return Cars[garageId];
+        }
+
+        public byte[]? GetMGarageRawData(uint garageId)
+        {
+            return Cars.FirstOrDefault(x => x.GarageId == garageId)?.GetRawData();
         }
 
         public int GetCarCount()
@@ -200,15 +215,76 @@ namespace PDTools.Structures.PS3
         public MGarageCar[] GetCars(MGarageFilters filters)
         {
             var sortFunc = GetSortFunc(filters.SortType);
-            
+
             var query = Cars.Where(x => x.CarExists);
             query = filters.SortOrder == GarageSortOrder.Normal
                 ? query.OrderBy(sortFunc)
                 : query.OrderByDescending(sortFunc);
-            
+
             return query.ToArray();
         }
-        
+
+        #region DLC/Voucher methods
+
+        public void ClearDlcEntries()
+        {
+            DlcTable = [];
+        }
+
+        public void AddDlcEntry(uint carId, bool dlcEnabled, bool dlcInvalid)
+        {
+            DlcTable.Add((carId, dlcEnabled, dlcInvalid));
+        }
+
+        public void RemoveDlcEntry(uint carId)
+        {
+            DlcTable.RemoveAll(x => x.CarId == carId);
+        }
+
+        public bool IsDlcCar(uint carId)
+        {
+            return DlcTable.Any(x => x.CarId == carId);
+        }
+
+        public bool IsDlcCarEnabled(uint carId)
+        {
+            return DlcTable.FirstOrDefault(x => x.CarId == carId).DlcEnabled;
+        }
+
+        public bool IsDlcCarInvalid(uint carId)
+        {
+            return DlcTable.FirstOrDefault(x => x.CarId == carId).DlcInvalid;
+        }
+
+        public void RevalidateDlcCars()
+        {
+            Cars.Where(x => x.Invalid).ToList().ForEach(x => x.Invalid = false);
+        }
+
+        #endregion
+
+        #region Update MGarageCar methods
+
+        public void UpdateMGarageRawData(uint garageId, byte[] rawData)
+        {
+            var index = Cars.FindIndex(x => x.GarageId == garageId);
+            if (index == -1)
+                return;
+
+            Cars[index]?.UpdateRawDataAndReload(rawData);
+        }
+
+        public void UpdateMGarageCar(uint garageId, MGarageCar car)
+        {
+            var index = Cars.FindIndex(x => x.GarageId == garageId);
+            if (index == -1)
+                return;
+
+            Cars[index] = car;
+        }
+
+        #endregion
+
         private static Func<MGarageCar, object> GetSortFunc(GarageSortType sortType)
         {
             return sortType switch
@@ -238,14 +314,14 @@ namespace PDTools.Structures.PS3
         public GarageSortOrder SortOrder { get; set; } = GarageSortOrder.Normal;
 
         public List<Country>? FilterNationality { get; set; }
-        
+
         public List<Tuner>? FilterTuner { get; set; }
-        
+
         public List<Drivetrain>? FilterDrivetrain { get; set; }
 
         public bool? Favorite { get; set; }
 
         public bool? Invalid { get; set; }
-        
+
     }
 }

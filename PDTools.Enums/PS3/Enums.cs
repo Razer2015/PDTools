@@ -613,4 +613,14 @@ namespace PDTools.Enums.PS3
         IsDlcCar = 0x40000,
         IsDctrlImpreza = 0x80000,
     }
+
+    public enum RacingGearType
+    {
+        [Description("AVATAR_MET")]
+        AvatarMet = 0,
+        [Description("AVATAR_SUIT")]
+        AvatarSuit = 1,
+        [Description("AVATAR_SET")]
+        AvatarSet = 2,
+    }
 }
