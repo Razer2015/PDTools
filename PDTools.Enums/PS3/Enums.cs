@@ -564,6 +564,9 @@ namespace PDTools.Enums.PS3
         [Description("Supercharged")]
         SUPERCHARGED = 2,
         
+        [Description("Super Turbo")]
+        SUPERTURBO = 3,
+        
         [Description("Hybrid")]
         EV = 4,
     }
