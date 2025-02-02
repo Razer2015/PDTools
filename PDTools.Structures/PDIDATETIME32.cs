@@ -12,6 +12,9 @@ namespace PDTools.Structures
 
 		public PDIDATETIME32(uint timeData)
 			=> _timeData = timeData;
+		
+		public PDIDATETIME32(DateTime date)
+			=> SetDateTime(date);
 
 		public void SetDateTime(DateTime date)
 		{

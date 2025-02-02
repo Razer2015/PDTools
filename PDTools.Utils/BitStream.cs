@@ -1033,6 +1033,20 @@ namespace PDTools.Utils
 
         public void WriteBoolBit(bool value)
             => WriteBits((ulong)(value ? 1 : 0), 1);
+        
+        /// <summary>
+        /// Writes a buffer to the stream.
+        /// </summary>
+        /// <param name="data"></param>
+        public void WriteByteDataUnaligned(Span<byte> data)
+        {
+            EnsureCapacity(data.Length * Byte_Bits);
+
+            foreach (byte b in data)
+            {
+                WriteBits(b, Byte_Bits);
+            }
+        }
 
 
         #region Debug Tools

@@ -14,6 +14,8 @@ namespace PDTools.Structures.PS3
 {
     public class MCarParameter
     {
+        private byte[]? _rawData;
+        
         public int ParameterVersion { get; set; }
 
         public MCarCondition Condition { get; set; } = new MCarCondition();
@@ -37,26 +39,13 @@ namespace PDTools.Structures.PS3
         /// GT5 Only
         /// </summary>
         public byte RaceClassId { get; set; }
-
-        /// <summary>
-        /// GT5 Only
-        /// </summary>
-        public byte special_gas_ratio_100 { get; set; }
-
-        /// <summary>
-        /// GT5 Only
-        /// </summary>
-        public byte special_gas_liter { get; set; }
-
-        /// <summary>
-        /// GT5 Only
-        /// </summary>
-        public byte nos_ratio_100 { get; set; }
-
-        /// <summary>
-        /// GT5 Only
-        /// </summary>
-        public byte nos_duration_sec { get; set; }
+        
+        public byte SpecialGasRatio100 { get; set; }
+        public byte SpecialGasLiter { get; set; }
+        public byte NosRatio100 { get; set; }
+        public byte NosDurationSec { get; set; }
+        public short Battery { get; set; }
+        public short GasolineLiter { get; set; }
 
         /// <summary>
         /// GT6 Only
@@ -75,6 +64,12 @@ namespace PDTools.Structures.PS3
         public short PowerScratch { get; set; }
         public short PPScratch { get; set; }
 
+        public int Color
+        {
+            get => Settings.VariationID;
+            set => Settings.VariationID = value;
+        }
+
         public MCarSettings Settings { get; set; } = new MCarSettings();
 
         public static MCarParameter ImportFromBlob(string fileName)
@@ -90,34 +85,17 @@ namespace PDTools.Structures.PS3
             return ImportFromBlob(ref reader);
         }
 
-        public void Serialize(ref BitStream bs)
-        {
-            bs.WriteInt32(ParameterVersion);
-            bs.WriteByte(0);
-            bs.Position += 3;
-            Condition.WriteCondition(ref bs);
-
-            bs.WriteInt32(0);
-            bs.WriteUInt32(ObtainDate.GetRawData());
-            bs.WriteInt16(WinCount);
-
-            // TODO
-            bs.WriteInt16(0);
-            bs.WriteInt16(0);
-            bs.WriteInt16(0);
-            bs.WriteUInt32(0);
-            bs.WriteUInt16(0);
-            bs.WriteInt16(0);
-            bs.WriteUInt16(0);
-
-            Settings.Serialize(ref bs, ParameterVersion);
-        }
-
         public static MCarParameter ImportFromBlob(ref BitStream reader)
         {
             int baseOffset = reader.Position;
-
+            
             var car = new MCarParameter();
+            
+            // Read the raw data and reset the reader position
+            car._rawData = new byte[reader.Length - reader.Position];
+            reader.ReadIntoByteArray(car._rawData.Length, car._rawData, BitStream.Byte_Bits);
+            reader.Position = baseOffset;
+
             car.ParameterVersion = reader.ReadInt32();
 
             if (car.ParameterVersion >= 110) // GT5
@@ -130,9 +108,9 @@ namespace PDTools.Structures.PS3
             }
             else
             {
-                reader.ReadBits(1);
-                reader.ReadBits(6);
-                reader.ReadBits(6);
+                car.Target = (byte)reader.ReadBits(1);
+                car.TeamId = (byte)reader.ReadBits(6);
+                car.RaceClassId = (byte)reader.ReadBits(6);
                 reader.ReadBits(12);
                 reader.ReadBits(1);
                 reader.ReadBits(5);
@@ -146,18 +124,18 @@ namespace PDTools.Structures.PS3
                 car.GarageID = reader.ReadInt32(); // Upper bit means rentacar
                 car.RideCount = reader.ReadInt16();
                 car.WinCount = reader.ReadInt16();
-                car.special_gas_ratio_100 = reader.ReadByte();
-                car.special_gas_liter = reader.ReadByte();
-                car.nos_ratio_100 = reader.ReadByte();
-                car.nos_duration_sec = reader.ReadByte();
+                car.SpecialGasRatio100 = reader.ReadByte();
+                car.SpecialGasLiter = reader.ReadByte();
+                car.NosRatio100 = reader.ReadByte();
+                car.NosDurationSec = reader.ReadByte();
                 reader.ReadInt16();
                 car.PackSmall = reader.ReadByte();
                 reader.ReadBits(1);
                 reader.ReadBits(5);
                 reader.ReadBits(2);
-                reader.ReadBits(6);
-                reader.ReadBits(13);
-                reader.ReadBits(13);
+                reader.ReadBits(6); // Rim dealership color
+                reader.ReadBits(13); // Body color
+                reader.ReadBits(13); // Rim color
                 byte decken_type = reader.ReadByte();
                 byte decken_number = reader.ReadByte();
 
@@ -165,9 +143,16 @@ namespace PDTools.Structures.PS3
             }
             else
             {
+                car.SpecialGasRatio100 = reader.ReadByte();
+                car.SpecialGasLiter = reader.ReadByte();
+                car.NosRatio100 = reader.ReadByte();
+                car.NosDurationSec = reader.ReadByte();
+                car.Battery = reader.ReadInt16();
+                car.GasolineLiter = reader.ReadInt16();
                 car.ObtainDate = new PDIDATETIME32(reader.ReadUInt32());
                 car.WinCount = reader.ReadInt16();
-                reader.ReadInt16();
+                
+                reader.ReadInt16(); // Correct?
 
                 if (car.ParameterVersion >= 109)
                 {
@@ -201,6 +186,110 @@ namespace PDTools.Structures.PS3
 
             reader.Align(0x10);
             return car;
+        }
+
+        public Span<byte> Serialize()
+        {
+            if (_rawData == null)
+                throw new InvalidOperationException("Raw data is null");
+            
+            var writeStream = new BitStream(BitStreamMode.Write, _rawData)
+            {
+                BufferByteSize = _rawData.Length
+            };
+            Serialize(ref writeStream); 
+            return writeStream.GetBuffer();
+        }
+        
+        public void Serialize(ref BitStream bs)
+        {
+            bs.WriteInt32(ParameterVersion);
+            
+            if (ParameterVersion >= 110) // GT5
+            {
+                bs.WriteInt32(MainHeaderSize); // Header Size
+                bs.Position += 1;
+                bs.WriteByte(Target);
+                bs.WriteByte(TeamId);
+                bs.WriteByte(RaceClassId);
+            }
+            else
+            {
+                bs.WriteBits(Target, 1);
+                bs.WriteBits(TeamId, 6);
+                bs.WriteBits(RaceClassId, 6);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 12);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 5);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1);
+            }
+            
+            Condition.Serialize(ref bs, ParameterVersion);
+            
+            if (ParameterVersion >= 110) // GT5
+            {
+                bs.WriteInt32(GarageID); // Upper bit means rentacar
+                bs.WriteInt16(RideCount);
+                bs.WriteInt16(WinCount);
+                bs.WriteByte(SpecialGasRatio100);
+                bs.WriteByte(SpecialGasLiter);
+                bs.WriteByte(NosRatio100);
+                bs.WriteByte(NosDurationSec);
+                bs.Position += 2;
+                bs.WriteByte(PackSmall);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 5);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 6);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 13);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 13);
+                bs.Position += 1;
+                bs.Position += 1;
+
+                bs.Position = MainHeaderSize;
+            }
+            else
+            {
+                bs.WriteByte(SpecialGasRatio100);
+                bs.WriteByte(SpecialGasLiter);
+                bs.WriteByte(NosRatio100);
+                bs.WriteByte(NosDurationSec);
+                bs.WriteInt16(Battery);
+                bs.WriteInt16(GasolineLiter);
+                bs.WriteUInt32(ObtainDate.GetRawData());
+                bs.WriteInt16(WinCount);
+                
+                bs.Position += 2;
+                
+                if (ParameterVersion >= 109)
+                {
+                    bs.Position += 2;
+                    bs.Position += 2;
+                }
+                
+                bs.Position = 0x50;
+            }
+
+            if (ParameterVersion >= 110) // GT5
+            {
+                bs.WriteByteDataUnaligned(Settings.PurchaseBits);
+            }
+            
+            Settings.Serialize(ref bs, ParameterVersion);
+
+            if (ParameterVersion >= 1_10)
+            {
+                bs.WriteInt16(ObtainID);
+                bs.WriteInt16(PowerScratch);
+                bs.WriteInt16(PPScratch);
+                bs.Position += 2;
+            }
+            else
+            {
+                bs.WriteByteDataUnaligned(Settings.PurchaseBits);
+            }
+            
+            bs.Align(0x10);
         }
 
         public bool IsHavingParts(CarPartsType table, int partIndex)
@@ -335,6 +424,17 @@ namespace PDTools.Structures.PS3
             { CarPartsType.WING, 198 },
             { CarPartsType.STIFFNESS, 202 },
         };
+
+        // public (float Ps, int Rpm) GetPower()
+        // {
+        //     
+        // }
+        //
+        // public (float Kgfm, int Rpm) GetTorque()
+        // {
+        //     
+        // }
+
     }
 
     public class MCarCondition
@@ -346,11 +446,18 @@ namespace PDTools.Structures.PS3
         public byte Dirtiness100 { get; set; }
         public byte RainX { get; set; }
         public byte BodyCoating { get; set; }
-        private byte unk2;
-        public int Everlasting { get; set; }
+        private byte _unk1;
+        public bool Everlasting { get; set; }
+
+        public ulong Unk2 { get; set; }
+        private short _unkDirt1;
+        private long _unkDirt2;
+        private int _unkDirt3;
+
         public byte WheelDirtFront { get; set; }
         public byte WheelDirtRear { get; set; }
         public int Scratch { get; set; }
+        private int _unkScratch1;
 
         public void ParseCondition(ref BitStream reader, int carParamVersion)
         {
@@ -361,37 +468,29 @@ namespace PDTools.Structures.PS3
             Dirtiness100 = reader.ReadByte();
             RainX = reader.ReadByte();
             BodyCoating = reader.ReadByte();
-            unk2 = reader.ReadByte();
+            _unk1 = reader.ReadByte();
 
-            reader.ReadBits(1); //   *(ulonglong *)&(param_1->Meta).dirtiness = (uVar3 & 0x1) << 0x1f | *(ulonglong*)&(param_1->Meta).dirtiness & 0xffffffff7fffffff;
-            reader.ReadBits(1); //   *(ulonglong*)&(param_1->Meta).dirtiness = (uVar3 & 0x1) << 0x1e | *(ulonglong*)&(param_1->Meta).dirtiness & 0xffffffffbfffffff;
-            reader.ReadBits(30); //   *(ulonglong *)&(param_1->Meta).dirtiness = (uVar3 & 0x1) << 0x1e | *(ulonglong*)&(param_1->Meta).dirtiness & 0xffffffffbfffffff;
-
+            Everlasting = reader.ReadBoolBit(); 
+            // reader.ReadBits(1); //   *(ulonglong *)&(param_1->Meta).dirtiness = (uVar3 & 0x1) << 0x1f | *(ulonglong*)&(param_1->Meta).dirtiness & 0xffffffff7fffffff;
+            // reader.ReadBits(1); //   *(ulonglong*)&(param_1->Meta).dirtiness = (uVar3 & 0x1) << 0x1e | *(ulonglong*)&(param_1->Meta).dirtiness & 0xffffffffbfffffff;
+            // reader.ReadBits(30); //   *(ulonglong *)&(param_1->Meta).dirtiness = (uVar3 & 0x1) << 0x1e | *(ulonglong*)&(param_1->Meta).dirtiness & 0xffffffffbfffffff;
+            Unk2 = reader.ReadBits(31);
+            
             if (carParamVersion >= 110)
                 return; // GT5 Ends here
 
-            reader.ReadInt16(); // 5 bits, 6 bits, 5 bits
+            // reader.ReadInt16(); // 5 bits, 6 bits, 5 bits
+            _unkDirt1 = reader.ReadInt16();
             WheelDirtFront = reader.ReadByte();
             WheelDirtRear = reader.ReadByte();
-
-            // All unknown
-            reader.ReadInt32();
-            reader.ReadInt32();
-            reader.ReadInt32();
+            _unkDirt2 = reader.ReadInt64();
+            _unkDirt3 = reader.ReadInt32();
+            
             Scratch = reader.ReadInt32(); // Scratch
-            reader.ReadInt32(); // Scratch related
-
-            // Grouped
-            reader.ReadByte();
-            reader.ReadByte();
-            reader.ReadByte();
-            reader.ReadByte();
-
-            reader.ReadInt16();
-            reader.ReadInt16();
+            _unkScratch1 = reader.ReadInt32(); // Scratch related
         }
 
-        public void WriteCondition(ref BitStream bs)
+        public void Serialize(ref BitStream bs, int carParamVersion)
         {
             bs.WriteUInt32(Odometer);
             bs.WriteInt32(EngineLife);
@@ -400,17 +499,22 @@ namespace PDTools.Structures.PS3
             bs.WriteByte(Dirtiness100);
             bs.WriteByte(RainX);
             bs.WriteByte(BodyCoating);
-            bs.WriteByte(unk2);
-            bs.WriteInt32(Everlasting);
-
-            // TODO
-            bs.WriteInt16(0);
-            bs.WriteInt32(0);
-            bs.WriteInt16(0);
-            bs.WriteInt16(0);
-            bs.WriteSingle(0);
-            bs.WriteInt16(0);
-            bs.WriteByteData(new byte[12]);
+            bs.WriteByte(_unk1);
+            bs.WriteBoolBit(Everlasting);
+            bs.WriteBits(Unk2, 31);
+            
+            if (carParamVersion >= 110)
+                return; // GT5 Ends here
+            
+            // GT6
+            bs.WriteInt16(_unkDirt1);
+            bs.WriteByte(WheelDirtFront);
+            bs.WriteByte(WheelDirtRear);
+            bs.WriteInt64(_unkDirt2);
+            bs.WriteInt32(_unkDirt3);
+            
+            bs.WriteInt32(Scratch);
+            bs.WriteInt32(_unkScratch1);
         }
     }
 
@@ -420,7 +524,7 @@ namespace PDTools.Structures.PS3
 
         public short FrontWheelEx { get; set; }
         public short RearWheelEx { get; set; }
-        private short WheelInchupRelated { get; set; }
+        private int WheelInchupRelated { get; set; }
         public int WheelSP { get; set; } = -1;
         public long NormalCarCode { get; set; } = -1;
 
@@ -533,8 +637,10 @@ namespace PDTools.Structures.PS3
         public byte RearCamber { get; set; }
         public short FrontRideHeight { get; set; }
         public short RearRideHeight { get; set; }
-        public short FrontToe { get; set; }
-        public short RearToe { get; set; }
+        public sbyte FrontToe { get; set; }
+        public short FrontToe_unk { get; set; }
+        public sbyte RearToe { get; set; }
+        public short RearToe_unk { get; set; }
         public short FrontSpringRate { get; set; }
         public short RearSpringRate { get; set; }
         public short LeverRatioF { get; set; }
@@ -599,7 +705,7 @@ namespace PDTools.Structures.PS3
         public uint CustomMeterColor { get; set; }
 
         public byte[] PurchaseBits { get; set; }
-        public int VariationID { get; private set; }
+        public int VariationID { get; set; }
 
         public bool GetPurchasedPartFromBitIndex(int bitIndex)
         {
@@ -640,7 +746,7 @@ namespace PDTools.Structures.PS3
                 PartsVersion = reader.ReadUInt32();
                 FrontWheelEx = reader.ReadInt16();
                 RearWheelEx = reader.ReadInt16();
-                WheelInchupRelated = (short)reader.ReadInt32();
+                WheelInchupRelated = reader.ReadInt32();
                 WheelSP = reader.ReadInt32();
                 NormalCarCode = reader.ReadInt32();
                 GarageID = reader.ReadInt32();
@@ -650,28 +756,28 @@ namespace PDTools.Structures.PS3
                 RearTire = reader.ReadInt32();
             }
 
-            Brake = reader.ReadInt32();
-            Brakecontroller = reader.ReadInt32();
-            Chassis = reader.ReadInt32();
-            Engine = reader.ReadInt32();
-            DriveTrain = reader.ReadInt32();
-            Gear = reader.ReadInt32();
-            Suspension = reader.ReadInt32();
-            LSD = reader.ReadInt32();
-            Steer = reader.ReadInt32();
-            Lightweight = reader.ReadInt32();
-            Racingmodify = reader.ReadInt32();
-            Displacement = reader.ReadInt32();
-            Computer = reader.ReadInt32();
-            Natune = reader.ReadInt32();
-            TurbineKit = reader.ReadInt32();
+            Brake = reader.ReadInt32(); // + 0x24
+            Brakecontroller = reader.ReadInt32(); // + 0x28
+            Chassis = reader.ReadInt32(); // + 0x2C
+            Engine = reader.ReadInt32(); // + 0x30
+            DriveTrain = reader.ReadInt32(); // + 0x34
+            Gear = reader.ReadInt32(); // + 0x38
+            Suspension = reader.ReadInt32(); // + 0x3C
+            LSD = reader.ReadInt32(); // + 0x40
+            Steer = reader.ReadInt32(); // + 0x44
+            Lightweight = reader.ReadInt32(); // + 0x48 - Disassembly says 0x44
+            Racingmodify = reader.ReadInt32(); // + 0x4C
+            Displacement = reader.ReadInt32(); // + 0x50
+            Computer = reader.ReadInt32(); // + 0x54
+            Natune = reader.ReadInt32(); // + 0x58
+            TurbineKit = reader.ReadInt32(); // + 0x58
             Flywheel = reader.ReadInt32();
             Clutch = reader.ReadInt32();
             PropellerShaft = reader.ReadInt32();
             Muffler = reader.ReadInt32();
             Intercooler = reader.ReadInt32();
             ASCC = reader.ReadInt32();
-            TCSC = reader.ReadInt32();
+            TCSC = reader.ReadInt32(); // + 0x74
 
             if (carParamVersion >= 110 && PartsVersion >= 0x103 // GT5
                 || PartsVersion < 106) // GT6
@@ -719,10 +825,10 @@ namespace PDTools.Structures.PS3
             RearRideHeight = reader.ReadInt16();
             FrontToe = reader.ReadSByte();
             RearToe = reader.ReadSByte();
-            FrontSpringRate = PartsVersion >= 110 ? reader.ReadByte() : reader.ReadInt16();
-            RearSpringRate = PartsVersion >= 110 ? reader.ReadByte() : reader.ReadInt16();
-            LeverRatioF = PartsVersion >= 110 ? reader.ReadByte() : reader.ReadInt16();
-            LevelRatioR = PartsVersion >= 110 ? reader.ReadByte() : reader.ReadInt16();
+            FrontSpringRate = carParamVersion >= 110 ? reader.ReadByte() : reader.ReadInt16();
+            RearSpringRate = carParamVersion >= 110 ? reader.ReadByte() : reader.ReadInt16();
+            LeverRatioF = carParamVersion >= 110 ? reader.ReadByte() : reader.ReadInt16();
+            LevelRatioR = carParamVersion >= 110 ? reader.ReadByte() : reader.ReadInt16();
 
             FrontDamperF1B = reader.ReadByte();
             FrontDamperF2B = reader.ReadByte();
@@ -748,7 +854,7 @@ namespace PDTools.Structures.PS3
             ASCC_VUCParam11DF = reader.ReadByte();
             BallastWeight = reader.ReadByte();
             BallastPosition = reader.ReadSByte();
-            SteerLimit = reader.ReadByte();
+            SteerLimit = reader.ReadByte(); // Correct?
             unk3 = reader.ReadInt16();
             WeightModifyRatio = reader.ReadInt16();
             PowerModifyRatio = reader.ReadInt16();
@@ -770,7 +876,7 @@ namespace PDTools.Structures.PS3
 
             if (carParamVersion >= 1_10 && PartsVersion >= 0x104) // GT5
                 PowerLimiter = reader.ReadInt16();
-            else if (carParamVersion < 1_09) // GT6
+            else if (carParamVersion <= 1_09) // GT6
                 PowerLimiter = reader.ReadInt16();
 
             HornSoundID = reader.ReadInt32();
@@ -794,6 +900,12 @@ namespace PDTools.Structures.PS3
             FrontWheelDiameter = reader.ReadInt16();
             RearWheelWidth = reader.ReadInt16();
             RearWheelDiameter = reader.ReadInt16();
+            
+            // This is wrong from this onwards, at least for GT6
+            reader.SeekToByte(0x1C0);
+            return;
+            
+            reader.ReadInt16();
             WheelInchup = reader.ReadByte();
             DeckenPreface = reader.ReadByte();
 
@@ -872,8 +984,8 @@ namespace PDTools.Structures.PS3
 
             if (PartsVersion >= 1_18)
             {
-                FrontToe = (sbyte)reader.ReadInt16();
-                RearToe = (sbyte)reader.ReadInt16();
+                FrontToe_unk = reader.ReadInt16();
+                RearToe_unk = reader.ReadInt16();
             }
         }
 
@@ -897,7 +1009,7 @@ namespace PDTools.Structures.PS3
                 bs.WriteUInt32(PartsVersion);
                 bs.WriteInt16(FrontWheelEx);
                 bs.WriteInt16(RearWheelEx);
-                bs.WriteInt16(WheelInchupRelated);
+                bs.WriteInt32(WheelInchupRelated);
                 bs.WriteInt32(WheelSP);
                 bs.WriteInt32((int)NormalCarCode);
                 bs.WriteInt32(GarageID);
@@ -948,7 +1060,7 @@ namespace PDTools.Structures.PS3
             bs.WriteInt32(FlatFloors);
             bs.WriteInt32(Aero);
             bs.WriteInt32(Wing);
-            bs.WriteInt32(-1);
+            bs.Position += 4; // bs.WriteInt32(-1);
             bs.WriteInt32(RigidityImprovement);
             bs.WriteInt32(NitroKit);
 
@@ -985,8 +1097,8 @@ namespace PDTools.Structures.PS3
 
             bs.WriteInt16(FrontRideHeight);
             bs.WriteInt16(RearRideHeight);
-            bs.WriteSByte((sbyte)FrontToe);
-            bs.WriteSByte((sbyte)RearToe);
+            bs.WriteSByte(FrontToe);
+            bs.WriteSByte(RearToe);
 
             if (carParamVersion >= 110)
             {
@@ -1045,10 +1157,10 @@ namespace PDTools.Structures.PS3
             bs.WriteByte(ABSCorneringControlLevel);
 
             if (carParamVersion >= 1_10)
-                bs.WriteInt16(0);
+                bs.Position += 2;
             else
-                bs.WriteByte(0);
-            bs.WriteInt16(0);
+                bs.Position += 1;
+            bs.Position += 2;
 
             if (carParamVersion >= 1_10)
                 bs.WriteByte((byte)GasCapacity);
@@ -1057,7 +1169,7 @@ namespace PDTools.Structures.PS3
 
             if (carParamVersion >= 1_10 && PartsVersion >= 0x104)
                 bs.WriteInt16(PowerLimiter);
-            else if (carParamVersion < 1_09)
+            else if (carParamVersion <= 1_09)
                 bs.WriteInt16(PowerLimiter);
 
             bs.WriteInt32(HornSoundID);
@@ -1081,6 +1193,11 @@ namespace PDTools.Structures.PS3
             bs.WriteInt16(FrontWheelDiameter);
             bs.WriteInt16(RearWheelWidth);
             bs.WriteInt16(RearWheelDiameter);
+            
+            // Disabled until figured out what's wrong
+            bs.SeekToByte(0x1C0);
+            return;
+            
             bs.WriteByte(WheelInchup);
             bs.WriteByte(DeckenPreface);
 
@@ -1088,74 +1205,82 @@ namespace PDTools.Structures.PS3
             {
                 bs.WriteByte(DeckenNumber);
                 bs.WriteByte(DeckenType);
-                bs.WriteByte(0);
-                bs.WriteInt64(0);
-                bs.WriteInt64(0);
-                bs.WriteByte(0);
+                bs.Position += 1;
+                bs.Position += 8;
+                bs.Position += 8;
+                bs.Position += 1;
             }
             else
             {
                 bs.WriteBits(DeckenNumber, 2);
                 bs.WriteBits(DeckenType, 2);
-                bs.WriteBits(0, 2);
-                bs.WriteInt64(0);
-                bs.WriteInt64(0);
-                bs.WriteBoolBit(false);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2); // window_sticker_custom_type
+                
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 8 * BitStream.Byte_Bits);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 8 * BitStream.Byte_Bits); // Decken custom ID
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1); // Wing customized
             }
+            
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1 * BitStream.Byte_Bits); // Wing Flap Type
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1 * BitStream.Byte_Bits); // Wing End Plate Type
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1 * BitStream.Byte_Bits); // Wing Stay Type
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1 * BitStream.Byte_Bits); // Wing Mount Type
+            
+            bs.WriteInt16(WingWidthOffset);
+            bs.WriteInt16(WingHeightOffset);
+            bs.WriteInt16(WingAngleOffset);
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2 * BitStream.Byte_Bits);
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2 * BitStream.Byte_Bits);
 
-            bs.WriteByte(0); // Wing Flap Type
-            bs.WriteByte(0); // Wing End Plate Type
-            bs.WriteByte(0); // Wing Stay Type
-            bs.WriteByte(0); // Wing Mount Type
+            // Wing bits
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 3);
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1);
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 4);
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 4);
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2);
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2);
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 3);
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2);
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1);
+            bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2);
 
-            // TODO
-            bs.WriteBits(0, 3);
-            bs.WriteBits(0, 1);
-            bs.WriteBits(0, 4);
-            bs.WriteBits(0, 4);
-            bs.WriteBits(0, 2);
-            bs.WriteBits(0, 2);
-            bs.WriteBits(0, 3);
-            bs.WriteBits(0, 2);
-            bs.WriteBits(0, 1);
-            bs.WriteBits(0, 2);
-
+            // Custom Meter stuff
             if (PartsVersion == 1_15)
             {
-                bs.WriteByte(0);
-                bs.WriteByte(0);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1 * BitStream.Byte_Bits);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1 * BitStream.Byte_Bits);
 
-                bs.WriteInt16(0);
-                bs.WriteInt16(0);
-                bs.WriteInt16(0);
-
-                bs.WriteInt16(0);
-                bs.WriteInt16(0);
-                bs.WriteInt16(0);
-                bs.WriteInt16(0);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2 * BitStream.Byte_Bits); // Extra Meter Count
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2 * BitStream.Byte_Bits);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2 * BitStream.Byte_Bits); 
+                
+                // Backlight Color ARGB
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2 * BitStream.Byte_Bits);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2 * BitStream.Byte_Bits);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2 * BitStream.Byte_Bits);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2 * BitStream.Byte_Bits);
             }
             else
             {
-                bs.WriteBits(0, 2);
-                bs.WriteBits(0, 2);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 2);
 
-                bs.WriteBits(0, 10);
-                bs.WriteBits(0, 10);
-                bs.WriteBits(0, 10);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 10); // Extra Meter Count
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 10);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 10);
 
-                bs.WriteByte(0);
-                bs.WriteByte(0);
-                bs.WriteByte(0);
-                bs.WriteByte(0);
+                // Backlight Color ARGB
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1 * BitStream.Byte_Bits);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1 * BitStream.Byte_Bits);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1 * BitStream.Byte_Bits);
+                bs.SeekToBit(bs.Position * BitStream.Byte_Bits + bs.BitCounter + 1 * BitStream.Byte_Bits);
             }
 
             if (PartsVersion >= 1_18)
             {
-                bs.WriteInt16(FrontToe);
-                bs.WriteInt16(RearToe);
+                bs.WriteInt16(FrontToe_unk);
+                bs.WriteInt16(RearToe_unk);
             }
-
-            bs.Align(0x10);
         }
     }
 }

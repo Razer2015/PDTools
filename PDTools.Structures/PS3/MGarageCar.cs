@@ -11,6 +11,8 @@ namespace PDTools.Structures.PS3
         private byte[]? _rawData;
 
         public bool CarExists { get; set; }
+        
+        public int SlotId { get; set; }
 
         public Country Country { get; set; }
 
@@ -24,6 +26,14 @@ namespace PDTools.Structures.PS3
 
         public bool RealSpecHidden { get; set; }
 
+        public bool Priceless { get; set; }
+
+        public byte UnkFlagByte1 { get; set; }
+        
+        public byte UnkFlagByte2 { get; set; }
+        
+        public byte UnkFlagByte3 { get; set; }
+        
         public ulong Unk1 { get; set; }
 
         public PARTS_TIRE FrontTire { get; set; }
@@ -95,14 +105,21 @@ namespace PDTools.Structures.PS3
             // if (!garageCar.CarExists) // 1 bit
             //     return garageCar;
 
-            Country = (Country)internalBs.ReadBits(7); // 8 bits
+            SlotId = (int)internalBs.ReadBits(2); // 2 bits
+            Country = (Country)internalBs.ReadBits(5); // 8 bits
             Drivetrain = (Drivetrain)internalBs.ReadBits(3); // 11 bits
             Year = 1800 + internalBs.ReadByte(); // 19 bits - 2010 - 1800 = 210 or 1987 - 1800 = 87
             Favorites = internalBs.ReadBoolBit(); // 20 bits
             Aspiration = (Aspiration)internalBs.ReadBits(3); // 23 bits
             RealSpecHidden = internalBs.ReadBoolBit(); // 24 bits
             
-            Unk1 = internalBs.ReadBits(BitStream.Byte_Bits * 0x3 + 4); // Unknown 52 bits
+            UnkFlagByte1 = internalBs.ReadByte();
+            
+            Priceless = (UnkFlagByte1 >> 3 & 1) == 1;
+            
+            UnkFlagByte2 = internalBs.ReadByte();
+            UnkFlagByte3 = internalBs.ReadByte();
+            Unk1 = internalBs.ReadBits(4); // Unknown 52 bits
             
             FrontTire = (PARTS_TIRE)internalBs.ReadBits(5);
             RearTire = (PARTS_TIRE)internalBs.ReadBits(5);
@@ -133,14 +150,27 @@ namespace PDTools.Structures.PS3
         public void Serialize(ref BitStream bs)
         {
             bs.WriteBoolBit(CarExists);
-            bs.WriteBits((ulong)Country, 7);
+            bs.WriteBits((ulong)SlotId, 2);
+            bs.WriteBits((ulong)Country, 5);
             bs.WriteBits((ulong)Drivetrain, 3);
             bs.WriteByte((byte)(Year - 1800));
             bs.WriteBoolBit(Favorites);
             bs.WriteBits((ulong)Aspiration, 3);
             bs.WriteBoolBit(RealSpecHidden);
             
-            bs.WriteBits(Unk1, BitStream.Byte_Bits * 0x3 + 4);
+            // Set the 4th bit of UnkFlagByte1 based on the value of Priceless
+            if (Priceless)
+            {
+                UnkFlagByte1 = (byte)(UnkFlagByte1 | (1 << 3));
+            }
+            else
+            {
+                UnkFlagByte1 = (byte)(UnkFlagByte1 & ~(1 << 3));
+            }
+            bs.WriteByte(UnkFlagByte1);
+            bs.WriteByte(UnkFlagByte2);
+            bs.WriteByte(UnkFlagByte3);
+            bs.WriteBits(Unk1, 4);
             
             bs.WriteBits((ulong)FrontTire, 5);
             bs.WriteBits((ulong)RearTire, 5);

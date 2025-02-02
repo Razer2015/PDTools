@@ -5,15 +5,17 @@ using System.Linq;
 using PDTools.Enums;
 using PDTools.Enums.PS3;
 using PDTools.Utils;
+using Syroot.BinaryData.Memory;
 
 namespace PDTools.Structures.PS3
 {
     public class MGarage
     {
-
         private int VersionMajor { get; set; }
 
         private int VersionMinor { get; set; }
+        
+        private int RidingCarVersion { get; set; }
 
         private byte[] RidingCarBlob { get; set; }
 
@@ -35,11 +37,173 @@ namespace PDTools.Structures.PS3
 
         // public MCarParameter? RidingCar { get; private set; }
 
-        private List<(uint CarId, bool DlcEnabled, bool DlcInvalid)> DlcTable { get; set; } = [];
+        private List<(uint CarId, bool DlcExpended, bool DlcInvalid)> DlcTable { get; set; } = [];
 
-        private List<MGarageCar> Cars { get; set; } = [];
+        private MGarageCar[] Cars { get; set; } = [];
+        
+        // GARG - Car parameters
+        public class MGarg
+        {
+            private string? GaragePath { get; set; }
+            
+            public bool GarageLoaded { get; set; }
 
-        public static MGarage Load(Span<byte> data, string? savePath = null)
+            public uint Magic { get; set; }
+
+            public uint Version { get; set; }
+
+            public uint EntrySize { get; set; }
+
+            public uint SheetCount { get; set; }
+
+            public uint MaxCars { get; set; }
+
+            public uint MCarParameterSizeAligned { get; set; }
+
+            public uint MCarParameterSettingsVersion { get; set; }
+
+            public uint MCarParameterVersion { get; set; }
+
+            public static MGarg Read(string garagePath)
+            {
+                var garg = new MGarg
+                {
+                    GaragePath = garagePath,
+                };
+                
+                using var fileStream = new FileStream(garagePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                
+                // Allocate a buffer for the header
+                var header = new byte[0x20];
+
+                // Read the first 0x20 bytes
+                fileStream.Seek(0, SeekOrigin.Begin);
+                var read = fileStream.Read(header, 0, header.Length);
+                
+                if (read != header.Length)
+                    throw new InvalidDataException("Failed to read GARG header");
+                
+                var sr = new SpanReader(header, Syroot.BinaryData.Core.Endian.Big);
+                
+                // Ensure Magic is GARG
+                garg.Magic = sr.ReadUInt32();
+                if (garg.Magic != 0x47415247)
+                    throw new InvalidDataException("Invalid GARG magic");
+                
+                garg.Version = sr.ReadUInt32();
+                garg.EntrySize = sr.ReadUInt32();
+                garg.SheetCount = sr.ReadUInt32();
+                garg.MaxCars = sr.ReadUInt32();
+                garg.MCarParameterSizeAligned = sr.ReadUInt32();
+                garg.MCarParameterSettingsVersion = sr.ReadUInt32();
+                garg.MCarParameterVersion = sr.ReadUInt32();
+                garg.GarageLoaded = true;
+
+                return garg;
+            }
+            
+            public byte[] GetMCarParameterSheet(int index, int slotId)
+            {
+                if (!GarageLoaded)
+                    throw new InvalidOperationException("Garage not loaded");
+                
+                if (GaragePath == null)
+                    throw new InvalidOperationException("Garage path is null");
+                
+                if (slotId is < 0 or > 2)
+                    throw new ArgumentException("Slot ID must be between 0 and 2 (sheet A, B or C)");
+                
+                using var fileStream = new FileStream(GaragePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                
+                // Allocate a buffer for the sheet
+                var buffer = new byte[EntrySize];
+
+                var offset = (0x20 + index * EntrySize * SheetCount) + (slotId * EntrySize);
+
+#if DEBUG
+                Console.WriteLine($"Reading MCarParameter sheet at index {index} and slot ID {slotId} at offset {offset}");
+#endif
+                
+                // Move to the specific offset
+                fileStream.Seek(offset, SeekOrigin.Begin);
+
+                // Read the sheet
+                var read = fileStream.Read(buffer, 0, buffer.Length);
+                
+                if (read != buffer.Length)
+                    throw new InvalidDataException("Failed to read MCarParameter sheet");
+                
+                return buffer;
+            }
+            
+            public void SetMCarParameterSheet(int index, int slotId, byte[] data)
+            {
+                if (!GarageLoaded)
+                    throw new InvalidOperationException("Garage not loaded");
+                
+                if (GaragePath == null)
+                    throw new InvalidOperationException("Garage path is null");
+                
+                if (slotId is < 0 or > 2)
+                    throw new ArgumentException("Slot ID must be between 0 and 2 (sheet A, B or C)");
+                
+                using var fileStream = new FileStream(GaragePath, FileMode.Open, FileAccess.Write);
+                
+                var offset = (0x20 + index * EntrySize * SheetCount) + (slotId * EntrySize);
+                
+                // Move to the specific offset
+                fileStream.Seek(offset, SeekOrigin.Begin);
+                
+                // Write the sheet
+                fileStream.Write(data, 0, data.Length);
+            }
+
+            public void RemoveCar(int index)
+            {
+                SetMCarParameterSheet(index, 0, new byte[EntrySize]);
+                SetMCarParameterSheet(index, 1, new byte[EntrySize]);
+                SetMCarParameterSheet(index, 2, new byte[EntrySize]);
+            }
+            
+            public void Write()
+            {
+                if (GaragePath == null)
+                    throw new InvalidOperationException("Garage path is null");
+                
+                using var fs = new FileStream(GaragePath, FileMode.OpenOrCreate, FileAccess.Write);
+                var bw = new SpanWriter(new byte[0x20], Syroot.BinaryData.Core.Endian.Big);
+                
+                bw.WriteUInt32(Magic);
+                bw.WriteUInt32(Version);
+                bw.WriteUInt32(EntrySize);
+                bw.WriteUInt32(SheetCount);
+                bw.WriteUInt32(MaxCars);
+                bw.WriteUInt32(MCarParameterSizeAligned);
+                bw.WriteUInt32(MCarParameterSettingsVersion);
+                bw.WriteUInt32(MCarParameterVersion);
+                    
+                fs.Write(bw.Span);
+            }
+        }
+        
+        private MGarg? Garg { get; set; }
+
+        public bool Load(string path)
+        {
+            if (!File.Exists(path))
+                return false;
+            
+            Garg = MGarg.Read(path);
+
+            return true;
+        }
+        
+        public void Save()
+        {
+            Garg?.Write();
+        }
+
+        public static MGarage Deserialize(Span<byte> data, string? savePath = null)
         {
             var garage = new MGarage();
 
@@ -50,7 +214,8 @@ namespace PDTools.Structures.PS3
 
             // Read riding car
             // garage.RidingCar = MCarParameter.ImportFromBlob(ref bs);
-            switch (bs.ReadInt32())
+            garage.RidingCarVersion = bs.ReadInt32();
+            switch (garage.RidingCarVersion)
             {
                 case 0x6B:
                     bs.Position -= 0x04;
@@ -96,13 +261,17 @@ namespace PDTools.Structures.PS3
             garage.Unk2 = bs.ReadInt32(); // Just padding?
             garage.Unk3 = bs.ReadInt32(); // Just padding?
 
+            garage.Cars = new MGarageCar[garage.MaxGarageCount];
             for (var i = 0; i < garage.MaxGarageCount; i++)
             {
                 if (bs.Position + 0x28 > bs.Length)
-                    break;
+                {
+                    garage.Cars[i] = new MGarageCar();
+                    continue;
+                }
 
                 var garageCar = MGarageCar.Load(ref bs);
-                garage.Cars.Add(garageCar);
+                garage.Cars[i] = garageCar;
 // #if DEBUG
 //                 if (garageCar.CarExists)
 //                 {
@@ -112,11 +281,11 @@ namespace PDTools.Structures.PS3
             }
 
 #if DEBUG
-            var unk1Bools = garage.Cars.Where(x => x.Tuned).ToArray();
-            var unk2Bools = garage.Cars.Where(x => x.DLC).ToArray();
-            var unk3Bools = garage.Cars.Where(x => x.NOS).ToArray();
-
-            var carModels = string.Join(", ", unk2Bools.Select(x => x.CarCode.ToString()));
+            // var unk1Bools = garage.Cars.Where(x => x.Tuned).ToArray();
+            // var unk2Bools = garage.Cars.Where(x => x.DLC).ToArray();
+            // var unk3Bools = garage.Cars.Where(x => x.NOS).ToArray();
+            //
+            // var carModels = string.Join(", ", unk2Bools.Select(x => x.CarCode.ToString()));
 #endif
 
             return garage;
@@ -137,7 +306,7 @@ namespace PDTools.Structures.PS3
             foreach (var dlcEntry in DlcTable)
             {
                 bs.WriteUInt32(dlcEntry.CarId);
-                bs.WriteBoolBit(dlcEntry.DlcEnabled);
+                bs.WriteBoolBit(dlcEntry.DlcExpended);
                 bs.WriteBoolBit(dlcEntry.DlcInvalid);
             }
 
@@ -157,8 +326,12 @@ namespace PDTools.Structures.PS3
             {
                 garageCar.Serialize(ref bs);
             }
-
-            bs.Align(0x5120);
+            
+            bs.Align(0x20C /* Headers, RidingCar, etc. */ 
+                     + Cars.Length * 0x28 /* GarageCars */ 
+                     + 0xF4 /* Idk but maybe padding in preparation for DlcTable later on since they push the data forwards without making the size bigger? */
+            );
+            // bs.Align(0x5120);
 
             return bs.GetBuffer();
         }
@@ -167,39 +340,165 @@ namespace PDTools.Structures.PS3
         {
             return CurrentGarageId;
         }
+        
+        // ReSharper disable once InconsistentNaming
+        public bool HasDLCExpended(int carCode)
+        {
+            return DlcTable.Any(x => x.CarId == carCode && x.DlcExpended);
+        }
+        
+        public void SetInvalid(int carCode, bool invalid)
+        {
+            // Set invalid flag to the DlcTable
+            for (var i = 0; i < DlcTable.Count; i++)
+            {
+                if (DlcTable[i].CarId == carCode && DlcTable[i].DlcExpended)
+                {
+                    DlcTable[i] = (DlcTable[i].CarId, DlcTable[i].DlcExpended, invalid);
+                }
+            }
+            
+            // Set invalid flag to the garage car
+            for (var i = 0; i < Cars.Length; i++)
+            {
+                if (Cars[i].CarCode == carCode)
+                {
+                    Cars[i].Invalid = invalid;
+                }
+            }
+        }
+        
+        public MCarParameter GetCar(uint garageId)
+        {
+            var garageCar = ReferGarageCar(garageId);
+            
+            return GetCar(garageId, garageCar.SlotId);
+        }
+        
+        private MCarParameter GetCar(uint garageId, int slotId)
+        {
+            // Get the car data
+            var carData = GetCarRaw(garageId, slotId);
+            
+            return MCarParameter.ImportFromBlob(carData);
+        }
+        
+        public byte[] GetCarRaw(uint garageId, int slotId)
+        {
+            if (Garg is not { GarageLoaded: true })
+                throw new InvalidOperationException("Garage not loaded");
+            
+            if (slotId is < 0 or > 2)
+                throw new ArgumentException("Slot ID must be between 0 and 2 (sheet A, B or C)");
+            
+            // Get index of the car in the garage
+            var index = Array.FindIndex(Cars, x => x.GarageId == garageId);
+            if (index == -1)
+                throw new InvalidOperationException("Car not found in garage");
+            
+            // Get the car data
+            var carData = Garg!.GetMCarParameterSheet(index, slotId);
+            
+            return carData;
+        }
 
-        public MCarParameter GetRidingCarParameter()
+        public MCarParameter GetRidingCar()
         {
             return MCarParameter.ImportFromBlob(RidingCarBlob);
         }
 
-        public void AddCar(MGarageCar car)
+        public void AddCar(MCarParameter car, MGarageCar garageCar)
         {
-            throw new NotImplementedException();
-            // Cars.Add(car);
+            AddCar(car, false, garageCar);
+        }
+        
+        public void AddCar(MCarParameter car, bool voucherCar, MGarageCar garageCar)
+        {
+            if (Cars.Count(x => x.CarExists) >= MaxGarageCount)
+                throw new InvalidOperationException("Garage is full");
+            
+            // Prepare the garage car
+            garageCar.CarExists = true;
+            garageCar.GarageId = (uint)NextGarageId;
+            garageCar.Invalid = false;
+            
+            // Prepare the car
+            car.Settings.GarageID = NextGarageId;
+            car.ObtainDate = new PDIDATETIME32(DateTime.Now);
+            
+            // Find the first empty slot
+            var index = Array.FindIndex(Cars, x => !x.CarExists);
+            if (index == -1)
+                throw new InvalidOperationException("No empty slots in garage");
+            
+            // Add the garageCar
+            Cars[index] = garageCar;
+            
+            // Add the car parameters
+            var carData = car.Serialize().ToArray();
+            Garg!.SetMCarParameterSheet(index, 0, carData);
+            Garg!.SetMCarParameterSheet(index, 1, carData);
+            Garg!.SetMCarParameterSheet(index, 2, carData);
+            
+            // Add the DLC entry
+            if (voucherCar)
+            {
+                DlcTable.Add((garageCar.CarCode, true, false));
+            }
+            
+            // Increment the garage ID
+            NextGarageId++;
         }
 
         public void RemoveCar(MGarageCar car)
         {
-            throw new NotImplementedException();
-            // Cars.Remove(car);
+            var index = Array.FindIndex(Cars, x => x.GarageId == car.GarageId);
+            if (index == -1)
+                throw new InvalidOperationException("Car not found in garage");
+            
+            RemoveCar(index);
         }
 
         public void RemoveCar(int index)
         {
-            throw new NotImplementedException();
-            // Cars.RemoveAt(index);
+            if (index < 0 || index >= Cars.Length)
+                throw new ArgumentOutOfRangeException(nameof(index));
+            
+            // Is currently riding car
+            if (CurrentGarageId == Cars[index].GarageId)
+            {
+                // throw new InvalidOperationException("Cannot remove currently riding car");
+                CurrentGarageId = -1;
+            }
+            
+            // Remove the car from the garage car
+            Cars[index].CarExists = false;
+            
+            // Remove the car from the garage
+            Garg!.RemoveCar(index);
         }
 
         public void ClearCars()
         {
-            throw new NotImplementedException();
-            // Cars.Clear();
+            var existingCarIndexes = Cars
+                .Select((car, index) => new { car, index })
+                .Where(x => x.car.CarExists)
+                .Select(x => x.index)
+                .ToArray();
+
+            foreach (var index in existingCarIndexes)
+            {
+                RemoveCar(index);
+            }
         }
 
-        public MGarageCar GetCar(int garageId)
+        public MGarageCar ReferGarageCar(uint garageId)
         {
-            return Cars[garageId];
+            var garageCar = Cars.FirstOrDefault(x => x.GarageId == garageId);
+            if (garageCar == null)
+                throw new InvalidOperationException("Car not found in garage");
+            
+            return garageCar;
         }
 
         public byte[]? GetMGarageRawData(uint garageId)
@@ -218,8 +517,8 @@ namespace PDTools.Structures.PS3
 
             var query = Cars.Where(x => x.CarExists);
             query = filters.SortOrder == GarageSortOrder.Normal
-                ? query.OrderBy(sortFunc)
-                : query.OrderByDescending(sortFunc);
+                ? query.OrderByDescending(sortFunc)
+                : query.OrderBy(sortFunc);
 
             return query.ToArray();
         }
@@ -248,7 +547,7 @@ namespace PDTools.Structures.PS3
 
         public bool IsDlcCarEnabled(uint carId)
         {
-            return DlcTable.FirstOrDefault(x => x.CarId == carId).DlcEnabled;
+            return DlcTable.FirstOrDefault(x => x.CarId == carId).DlcExpended;
         }
 
         public bool IsDlcCarInvalid(uint carId)
@@ -267,7 +566,7 @@ namespace PDTools.Structures.PS3
 
         public void UpdateMGarageRawData(uint garageId, byte[] rawData)
         {
-            var index = Cars.FindIndex(x => x.GarageId == garageId);
+            var index = Array.FindIndex(Cars, x => x.GarageId == garageId);
             if (index == -1)
                 return;
 
@@ -276,7 +575,7 @@ namespace PDTools.Structures.PS3
 
         public void UpdateMGarageCar(uint garageId, MGarageCar car)
         {
-            var index = Cars.FindIndex(x => x.GarageId == garageId);
+            var index = Array.FindIndex(Cars, x => x.GarageId == garageId);
             if (index == -1)
                 return;
 
@@ -289,7 +588,7 @@ namespace PDTools.Structures.PS3
         {
             return sortType switch
             {
-                GarageSortType.Obtain => car => car.RideOrder,
+                GarageSortType.Obtain => car => car.GarageId,
                 // GarageSortType.CarName => car => car.CarName,
                 GarageSortType.Tuner => car => car.Tuner,
                 GarageSortType.Nationality => car => car.Country,
