@@ -368,6 +368,12 @@ namespace PDTools.Structures.PS3
             }
         }
         
+        public void SetFavorite(uint garageId, bool favorite)
+        {
+            var garageCar = ReferGarageCar(garageId);
+            garageCar.Favorites = favorite;
+        }
+        
         public MCarParameter GetCar(uint garageId)
         {
             var garageCar = ReferGarageCar(garageId);

@@ -10,6 +10,7 @@ namespace PDTools.STStruct.Nodes
     {
         public STShort(short val)
         {
+            Type = NodeType.Short;
             Value = val;
         }
 

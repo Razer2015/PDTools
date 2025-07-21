@@ -214,8 +214,39 @@ namespace PDTools.STStruct
             bs.Position = basePos + 0x01;
             bs.WriteInt32(keyTableOffset - (int)basePos);
         }
+        
+        public static byte[] Serialize(STMap map, int? fixedSize = null)
+        {
+            using var bs = new BinaryStream(new MemoryStream());
+            bs.ByteConverter = ByteConverter.Big;
+            
+            var basePos = bs.Position;
+            bs.WriteByte(0x0E);
+            bs.Position += 4; // Length
+            var keys = new List<string>();
+            WriteNode(bs, map, ref keys);
+            
+            var keyTableOffset = (int)bs.Length;
+            bs.EncodeAndAdvance((uint)keys.Count);
+            foreach (var key in keys)
+                bs.WriteString(key, StringCoding.ByteCharCount);
+            
+            // Ensure the stream is padded to fixedSize
+            if (fixedSize.HasValue)
+            {
+                while (bs.Length < fixedSize.Value)
+                {
+                    bs.WriteByte(0x00);
+                }
+            }
+            
+            bs.Position = basePos + 0x01;
+            bs.WriteInt32(keyTableOffset - (int)basePos);
+            
+            return (bs.BaseStream as MemoryStream)!.ToArray();
+        }
 
-        private void WriteNode(BinaryStream bs, NodeBase node, ref List<string> keys)
+        private static void WriteNode(BinaryStream bs, NodeBase node, ref List<string> keys)
         {
             bs.WriteByte((byte)node.Type);
             switch (node)

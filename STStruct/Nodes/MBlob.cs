@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
 using System.Diagnostics;
 
 namespace PDTools.STStruct.Nodes
@@ -10,6 +8,7 @@ namespace PDTools.STStruct.Nodes
     {
         public MBlob(Memory<byte> data)
         {
+            Type = NodeType.MBlob;
             Data = data;
         }
         public Memory<byte> Data { get; set; }

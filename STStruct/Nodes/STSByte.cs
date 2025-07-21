@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace PDTools.STStruct.Nodes
 {
@@ -10,6 +7,7 @@ namespace PDTools.STStruct.Nodes
     {
         public STSByte(sbyte val)
         {
+            Type = NodeType.SByte;
             Value = val;
         }
 

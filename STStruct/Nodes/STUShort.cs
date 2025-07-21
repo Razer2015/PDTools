@@ -7,6 +7,7 @@ namespace PDTools.STStruct.Nodes
     {
         public STUShort(ushort val)
         {
+            Type = NodeType.UShort;
             Value = val;
         }
 

@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace PDTools.STStruct.Nodes
 {
@@ -10,6 +7,7 @@ namespace PDTools.STStruct.Nodes
     {
         public STULong(ulong val)
         {
+            Type = NodeType.Double;
             Value = val;
         }
 
