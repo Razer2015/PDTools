@@ -311,5 +311,83 @@ namespace PDTools.STStruct
             }
         }
 
+        /// <summary>
+        /// Prints the structure to a text file with neat formatting.
+        /// </summary>
+        public void PrintToTextFile(string path)
+        {
+            using var writer = new StreamWriter(path, false, Encoding.UTF8);
+            PrintNodeRecursive(RootNode, writer, 0, "Root");
+        }
+
+        private static void PrintNodeRecursive(NodeBase node, StreamWriter writer, int indent, string? nodeName = null)
+        {
+            var indentStr = new string(' ', indent * 2);
+            var typeStr = node?.GetType().Name ?? "null";
+            var nameStr = nodeName != null ? $"{nodeName}: " : string.Empty;
+
+            switch (node)
+            {
+                case null:
+                    writer.WriteLine($"{indentStr}{nameStr}null");
+                    break;
+                case STMap map:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr} (Count: {map.Elements.Count})");
+                    foreach (var kv in map.Elements)
+                        PrintNodeRecursive(kv.Value, writer, indent + 1, kv.Key);
+                    break;
+                case STArray arr:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr} (Count: {arr.Elements.Count})");
+                    for (var i = 0; i < arr.Elements.Count; i++)
+                        PrintNodeRecursive(arr.Elements[i], writer, indent + 1, $"[{i}]");
+                    break;
+                case STString str:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: \"{str.Name}\"");
+                    break;
+                case STInt stInt:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: {stInt.Value}");
+                    if (stInt.KeyConfigNode != null)
+                        PrintNodeRecursive(stInt.KeyConfigNode, writer, indent + 1, "KeyConfigNode");
+                    break;
+                case STUInt stUInt:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: {stUInt.Value}");
+                    break;
+                case STLong stLong:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: {stLong.Value}");
+                    break;
+                case STULong stULong:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: {stULong.Value}");
+                    break;
+                case STShort stShort:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: {stShort.Value}");
+                    break;
+                case STUShort stUShort:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: {stUShort.Value}");
+                    break;
+                case STSByte stSByte:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: {stSByte.Value}");
+                    break;
+                case STByte stByte:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: {stByte.Value}");
+                    break;
+                case STFloat stFloat:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: {stFloat.Value}");
+                    break;
+                // case STObjectNull:
+                //     writer.WriteLine($"{indentStr}{nameStr}{typeStr}: null");
+                //     break;
+                case STObject stObj:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}");
+                    PrintNodeRecursive(stObj.Child, writer, indent + 1, "Child");
+                    break;
+                case MBlob blob:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: [Blob {blob.Data.Length} bytes]");
+                    break;
+                default:
+                    writer.WriteLine($"{indentStr}{nameStr}{typeStr}: [Unknown node type]");
+                    break;
+            }
+        }
+
     }
 }
