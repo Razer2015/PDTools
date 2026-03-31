@@ -218,6 +218,7 @@ namespace PDTools.Structures.PS3
             switch (garage.RidingCarVersion)
             {
                 case 0x6B:
+                case 0x6C:
                     bs.Position -= 0x04;
                     garage.RidingCarBlob = new byte[0x0200];
                     bs.ReadIntoByteArray(garage.RidingCarBlob.Length, garage.RidingCarBlob, BitStream.Byte_Bits);
